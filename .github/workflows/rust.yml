@@ -1,46 +1,52 @@
 name: Rust Deploy
-
 on:
   push:
-    branches: ["master"]
   pull_request:
-    branches: ["master"]
-
 permissions:
   contents: write
-
 jobs:
   build-and-upload:
-    name: Build for Windows
+    name: Windows Build
     runs-on: windows-latest
     env:
       BINARY_NAME: gui_basketball
+      TARGET: x86_64-pc-windows-msvc
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Get release version
-        shell: bash
+      - name: Set version
+        shell: pwsh
         run: |
-          VERSION_SAFE="${GITHUB_REF_NAME//\//-}"
-          echo "VERSION=${VERSION_SAFE}" >> "$GITHUB_ENV"
+          $version = "${env:GITHUB_REF_NAME}" -replace '/', '-'
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
-      - name: Build release binary
-        run: cargo build --release --target x86_64-pc-windows-msvc
-      - name: Build archive
-        shell: bash
+          targets: ${{ env.TARGET }}
+      - name: Build release executable
+        run: cargo build --release --target ${{ env.TARGET }}
+      - name: Package executable
+        shell: pwsh
         run: |
-          dirname="${BINARY_NAME}-${VERSION}-x86_64-pc-windows-msvc"
-          mkdir -p "$dirname"
-          mv "target/x86_64-pc-windows-msvc/release/${BINARY_NAME}.exe" "$dirname/"
-          7z a "${dirname}.zip" "$dirname"
-          echo "ASSET=${dirname}.zip" >> "$GITHUB_ENV"
+          $exe = "target/${env:TARGET}/release/${env:BINARY_NAME}.exe"
+          if (-not (Test-Path $exe)) {
+            throw "No file found: $exe"
+          }
+
+          $dirname = "${env:BINARY_NAME}-${env:VERSION}-${env:TARGET}"
+          New-Item -ItemType Directory -Force -Path $dirname | Out-Null
+          Copy-Item $exe -Destination "$dirname/"
+
+          $zip = "$dirname.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path $dirname -DestinationPath $zip
+
+          "ASSET=$zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ASSET }}
+          name: ${{ env.BINARY_NAME }}-${{ env.VERSION }}-windows
           path: ${{ env.ASSET }}
           if-no-files-found: error
           retention-days: 14
@@ -48,5 +54,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ${{ env.ASSET }}
+          files: ${{ env.ASSET }}
