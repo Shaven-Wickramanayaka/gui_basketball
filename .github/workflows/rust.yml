@@ -1,4 +1,4 @@
-name: Rust Multi Platform Deploy
+name: Rust Deploy
 
 on:
   push:
@@ -8,66 +8,43 @@ on:
 
 permissions:
   contents: write
+
 jobs:
   build-and-upload:
-    name: Build and upload
-    runs-on: ${{ matrix.os }}
+    name: Build and upload (Windows)
+    runs-on: windows-latest
 
-    strategy:
-      matrix:
-        include:
-          - build: linux
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-
-          - build: macos
-            os: macos-latest
-            target: x86_64-apple-darwin
+    env:
+      BINARY_NAME: gui_basketball
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Get the release version from the tag
+      - name: Get release version
         shell: bash
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-pc-windows-msvc
 
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --verbose --release --target ${{ matrix.target }}
+      - name: Build release binary
+        run: cargo build --release --target x86_64-pc-windows-msvc
 
       - name: Build archive
         shell: bash
         run: |
-          # Replace with the name of your binary
-          binary_name="<BINARY_NAME>"
-
-          dirname="$binary_name-${{ env.VERSION }}-${{ matrix.target }}"
+          dirname="${BINARY_NAME}-${VERSION}-x86_64-pc-windows-msvc"
           mkdir "$dirname"
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            mv "target/${{ matrix.target }}/release/$binary_name.exe" "$dirname"
-          else
-            mv "target/${{ matrix.target }}/release/$binary_name" "$dirname"
-          fi
-
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            7z a "$dirname.zip" "$dirname"
-            echo "ASSET=$dirname.zip" >> $GITHUB_ENV
-          else
-            tar -czf "$dirname.tar.gz" "$dirname"
-            echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
-          fi
+          mv "target/x86_64-pc-windows-msvc/release/${BINARY_NAME}.exe" "$dirname"
+          7z a "${dirname}.zip" "$dirname"
+          echo "ASSET=${dirname}.zip" >> $GITHUB_ENV
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ env.ASSET }}
