@@ -11,37 +11,32 @@ permissions:
 
 jobs:
   build-and-upload:
-    name: Build and upload (Windows)
+    name: Build for Windows
     runs-on: windows-latest
-
     env:
       BINARY_NAME: gui_basketball
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Get release version
         shell: bash
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-
+        run: |
+          VERSION_SAFE="${GITHUB_REF_NAME//\//-}"
+          echo "VERSION=${VERSION_SAFE}" >> "$GITHUB_ENV"
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-
       - name: Build release binary
         run: cargo build --release --target x86_64-pc-windows-msvc
-
       - name: Build archive
         shell: bash
         run: |
           dirname="${BINARY_NAME}-${VERSION}-x86_64-pc-windows-msvc"
-          mkdir "$dirname"
-          mv "target/x86_64-pc-windows-msvc/release/${BINARY_NAME}.exe" "$dirname"
+          mkdir -p "$dirname"
+          mv "target/x86_64-pc-windows-msvc/release/${BINARY_NAME}.exe" "$dirname/"
           7z a "${dirname}.zip" "$dirname"
-          echo "ASSET=${dirname}.zip" >> $GITHUB_ENV
-
+          echo "ASSET=${dirname}.zip" >> "$GITHUB_ENV"
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
