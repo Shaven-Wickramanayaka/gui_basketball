@@ -2,36 +2,76 @@ name: Rust
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
   pull_request:
-    branches: [ "master" ]
+    branches: ["master"]
 
 env:
   CARGO_TERM_COLOR: always
 jobs:
-# Jobs based on textpod deploy instructions
-  linux_windows:
-    runs-on: ubuntu-latest
+  build-and-upload:
+    name: Build and upload
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        # You can add more, for any target you'd like!
+        include:
+          - build: linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+
+          - build: macos
+            os: macos-latest
+            target: x86_64-apple-darwin
+
     steps:
-    - name: Checkout the repository
-      uses: actions/checkout@v2
-    - name: Install Linux and Windows Cross Compilers
-      run: sudo apt-get install --yes --no-install-recommends musl-tools gcc-mingw-w64-x86-64-win32
-    - name: Install rustup targets
-      run: rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu
-    - name: Build the executable
-      run: cargo build --release --target x86_64-unknown-linux-musl --target x86_64-pc-windows-gnu
-    - name: Tar x86_64 binary
-      run: tar -czvf gui_basketball-gnu-linux-x86_64.tar.gz -C target/x86_64-unknown-linux-musl/release gui_basketball
-    - name: Zip windows binary
-      run: zip -j gui_basketball-windows.zip target/x86_64-pc-windows-gnu/release/textpod.exe
-    - name: Generate SHA256 checksums
-      run: |
-        shasum -a 256 gui_basketball-gnu-linux-x86_64.tar.gz > gui_basketball-gnu-linux-x86_64.tar.gz.sha256
-        shasum -a 256 gui_basketball-windows.zip > gui_basketball-windows.zip.sha256
-    - name: Upload release binaries
-      uses: alexellis/upload-assets@0.4.0
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      with:
-        asset_paths: '["gui_basketball-gnu-linux-x86_64.tar.gz", "gui_basketball-windows.zip", "gui_basketball-gnu-linux-x86_64.tar.gz.sha256", "gui_basketball-windows.zip.sha256"]'
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Get the release version from the tag
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Install Rust
+        # Or @nightly if you want
+        uses: dtolnay/rust-toolchain@stable
+        # Arguments to pass in
+        with:
+          # Make Rust compile to our target (defined in the matrix)
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --verbose --release --target ${{ matrix.target }}
+
+      - name: Build archive
+        shell: bash
+        run: |
+          # Replace with the name of your binary
+          binary_name="<BINARY_NAME>"
+
+          dirname="$binary_name-${{ env.VERSION }}-${{ matrix.target }}"
+          mkdir "$dirname"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            mv "target/${{ matrix.target }}/release/$binary_name.exe" "$dirname"
+          else
+            mv "target/${{ matrix.target }}/release/$binary_name" "$dirname"
+          fi
+
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            7z a "$dirname.zip" "$dirname"
+            echo "ASSET=$dirname.zip" >> $GITHUB_ENV
+          else
+            tar -czf "$dirname.tar.gz" "$dirname"
+            echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
+          fi
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ env.ASSET }}
