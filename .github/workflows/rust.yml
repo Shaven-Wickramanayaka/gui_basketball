@@ -37,6 +37,13 @@ jobs:
           mv "target/x86_64-pc-windows-msvc/release/${BINARY_NAME}.exe" "$dirname/"
           7z a "${dirname}.zip" "$dirname"
           echo "ASSET=${dirname}.zip" >> "$GITHUB_ENV"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
+          retention-days: 14
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
